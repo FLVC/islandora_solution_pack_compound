@@ -103,6 +103,19 @@ function islandora_compound_object_block_view($delta = '') {
 }
 
 /**
+ * Implements hook_CMODEL_PID_islandora_object_purged().
+ */
+function islandora_compound_object_islandora_compoundcmodel_islandora_object_purged($pid) {
+  $parts = islandora_compound_object_get_parts($pid);
+  $rels_predicate = variable_get('islandora_compound_object_relationship', 'isConstituentOf');
+  foreach ($parts as $part) {
+    $escaped_pid = str_replace(':', '_', $pid);
+    $child_object = islandora_object_load($part);
+    $child_object->relationships->remove('info:fedora/fedora-system:def/relations-external#', $rels_predicate, $pid);
+    $child_object->relationships->remove(ISLANDORA_RELS_EXT_URI, "isSequenceNumberOf$escaped_pid");
+  }
+}
+/**
  * Implements hook_islandora_required_objects().
  */
 function islandora_compound_object_islandora_required_objects(IslandoraTuque $connection) {
@@ -191,7 +204,7 @@ function islandora_compound_object_navigation_block() {
 
     $output = '';
     if ($object) {
-      $rels_predicate = variable_get('islandora_compound_object_relationship', 'isPartOf');
+      $rels_predicate = variable_get('islandora_compound_object_relationship', 'isConstituentOf');
       $part_of = $object->relationships->get('info:fedora/fedora-system:def/relations-external#', $rels_predicate);
 
       // This object is part of a compound object.
@@ -209,7 +222,7 @@ function islandora_compound_object_navigation_block() {
 
           // Check if perms to show link for parent manage.
           if (islandora_object_manage_access_callback(array(
-            FEDORA_METADATA_EDIT, FEDORA_MANAGE_PROPERTIES, FEDORA_ADD_DS), $parent)) {
+            ISLANDORA_METADATA_EDIT, ISLANDORA_MANAGE_PROPERTIES, ISLANDORA_ADD_DS), $parent)) {
             $parent_url = 'islandora/object/' . $parent_pid . '/manage';
           }
           else {
@@ -310,10 +323,34 @@ function islandora_compound_object_autocomplete_child($string) {
 }
 
 /**
+ * Implements hook_islandora_basic_collection_get_query_statements().
+ */
+function islandora_compound_object_islandora_basic_collection_get_query_statements() {
+  return 'OPTIONAL {?object <fedora-rels-ext:isConstituentOf> ?compound . }';
+}
+
+/**
+ * Implements hook_islandora_basic_collection_get_query_filters().
+ */
+function islandora_compound_object_islandora_basic_collection_get_query_filters() {
+  return '!bound(?compound)';
+}
+
+/**
+ * Implements hook_islandora_solr_query().
+ */
+function islandora_compound_object_islandora_solr_query($islandora_solr_query) {
+  $fq = variable_get('islandora_compound_object_solr_fq', '-RELS_EXT_isConstituentOf_uri_mt:*');
+  if (!empty($fq)) {
+    $islandora_solr_query->solrParams['fq'][] = $fq;
+  }
+}
+
+/**
  * Return an array of pids that are part of a compound object.
  */
 function islandora_compound_object_get_parts($pid, $ret_title = FALSE) {
-  $rels_predicate = variable_get('islandora_compound_object_relationship', 'isPartOf');
+  $rels_predicate = variable_get('islandora_compound_object_relationship', 'isConstituentOf');
   $objects = array();
 
   $connection = islandora_get_tuque_connection();
@@ -352,7 +389,7 @@ EOQ;
 
     foreach ($results as $result) {
       $object = islandora_object_load($result['object']['value']);
-      if (islandora_object_access(FEDORA_VIEW_OBJECTS, $object)) {
+      if (islandora_object_access(ISLANDORA_VIEW_OBJECTS, $object)) {
         if ($ret_title) {
           $objects[$result['object']['value']] = array(
             'pid' => $result['object']['value'],

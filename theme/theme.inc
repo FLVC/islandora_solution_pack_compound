@@ -11,6 +11,8 @@
  * Theme function for the compound navigation block parts.
  */
 function theme_islandora_compound_prev_next($variables) {
+  drupal_add_js(drupal_get_path('module', 'islandora_compound_object') . '/js/caption_width.js');
+
   $output = '<div class="islandora-compound-prev-next">';
   $output .= '<span class="islandora-compound-title">' . t('Part of: @parent (@count objects)',
     array('@parent' => $variables['parent_label'], '@count' => $variables['child_count']));
@@ -33,15 +35,16 @@ function theme_islandora_compound_prev_next($variables) {
   if ($variables['child_count'] > 1) {
     $output .= '<div class="islandora-compound-thumbs">';
     for ($i = 0; $i < count($variables['siblings']); $i++) {
+      $output .= '<div class="islandora-compound-thumb">';
       $sibling = $variables['siblings'][$i];
-      if (arg(2) != $sibling && arg(2) != $variables['pid']) {
+      if ($sibling === $variables['pid']) {
         $active = array('class' => 'active');
       }
       else {
         $active = array();
       }
       $sibling_object = islandora_object_load($sibling);
-      if (isset($sibling_object['TN']) && islandora_datastream_access(FEDORA_VIEW_OBJECTS, $sibling_object['TN'])) {
+      if (isset($sibling_object['TN']) && islandora_datastream_access(ISLANDORA_VIEW_OBJECTS, $sibling_object['TN'])) {
         $path = 'islandora/object/' . $sibling . '/datastream/TN/view';
       }
       else {
@@ -50,16 +53,21 @@ function theme_islandora_compound_prev_next($variables) {
         $image_path = drupal_get_path('module', 'islandora');
         $path = "$image_path/images/folder.png";
       }
+
+      $output .= "<span class='islandora-compound-caption'>{$sibling_object->label}</span>";
+
       $output .= l(
         theme_image(
           array(
             'path' => $path,
-            'attributes' => array(),
+            'attributes' => array('class' => $active),
           )
         ),
         'islandora/object/' . $sibling,
-        array('attributes' => $active, 'html' => TRUE)
+        array('html' => TRUE)
       );
+
+      $output .= '</div>';
     }
     $output .= '</div>';
   }
