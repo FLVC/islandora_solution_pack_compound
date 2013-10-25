@@ -9,10 +9,26 @@
 
 .islandora-compound-thumbs {
   display: block;
-  white-space: nowrap;
-  overflow-x: auto;
+  overflow: auto;
+}
+
+.islandora-compound-thumb {
+  max-width: 100%;
+  display: inline-block;
+  overflow: hidden;
 }
 
 .islandora-compound-thumbs img {
-  margin: 5px 5px 5px 5px;
+  float: left;
+}
+
+.islandora-compound-thumb .islandora-compound-caption {
+  width: 100%;
+  overflow: hidden;
+  float: left;
+  white-space: nowrap;
+}
+
+.islandora-compound-thumbs img.active{
+  border:0.3em solid;
 }
