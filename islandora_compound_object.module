@@ -252,6 +252,7 @@ function islandora_compound_object_islandora_compoundCModel_islandora_view_objec
     $first_child_id = reset($children);
     if ($first_child_id != $object->id) {
       $first_child = islandora_object_load($first_child_id);
+      drupal_set_title($first_child->label);
       return islandora_view_object($first_child);
     }
   }
@@ -305,48 +306,67 @@ function islandora_compound_object_update_parent_thumbnail($parent) {
 /**
  * Autocomplete callback for child object search.
  *
- * @string string $string
+ * @param string $string
  *   The user supplied string that is being searched for.
+ * @param bool $parent
+ *   A flag indicating if we are to return objects usable as parents.
  */
 function islandora_compound_object_autocomplete($string, $parent = FALSE) {
   $matches = array();
   $islandora_tuque = islandora_get_tuque_connection();
   $compound_enforcement = variable_get('islandora_compound_object_compound_children', TRUE);
 
+  // Build escapes as per:
+  // - https://www.w3.org/TR/xmlschema-2/#dt-metac and
+  // - https://www.w3.org/TR/xmlschema-2/#dt-cces1
+  $meta = array(
+    '\\',
+    '.',
+    '?',
+    '*',
+    '+',
+    '{',
+    '}',
+    '(',
+    ')',
+    '[',
+    ']',
+    '|',
+    '-',
+    '^',
+  );
+  $escape_meta = function ($meta) {
+    return "\\\\$meta";
+  };
+  $meta_replacements = drupal_map_assoc($meta, $escape_meta);
+
+  $replacements = array(
+    '!compound_model' => '?model',
+    '!text' => str_replace(array_keys($meta_replacements), $meta_replacements, $string),
+  );
   if ($compound_enforcement && $parent) {
     $compound_model = ISLANDORA_COMPOUND_OBJECT_CMODEL;
-    $parent_query = <<<EOQ
-SELECT ?pid ?title FROM <#ri>
-WHERE {
-  ?pid <fedora-model:hasModel> <info:fedora/$compound_model> ;
-       <fedora-model:label> ?title
-}
-EOQ;
-    $results = $islandora_tuque->repository->ri->sparqlQuery($parent_query, 'unlimited');
-  }
-  else {
-    $results = $islandora_tuque->api->a->findObjects('terms', '*' . $string . '*', 10);
+    $replacements['!compound_model'] = "<info:fedora/$compound_model>";
   }
 
-  // Need to parse results differently for the SPARQL query versus findObjects.
-  if ($compound_enforcement && $parent) {
-    foreach ($results as $result) {
-      if (strpos(drupal_strtoupper($result['title']['value']), drupal_strtoupper($string)) !== FALSE) {
-        $matches[$result['pid']['value']] = $result['title']['value'] . ' (' . $result['pid']['value'] . ')';
-      }
-    }
-  }
-  else {
-    foreach ($results['results'] as $result) {
-      // Empty array elements getting sent through.
-      if (is_array($result['title'])) {
-        $title = $result['title'][0];
-      }
-      else {
-        $title = $result['title'];
-      }
-      $matches[$result['pid']] = $title . ' (' . $result['pid'] . ')';
-    }
+  $query = <<<'EOQ'
+SELECT DISTINCT ?pid ?title
+FROM <#ri>
+WHERE {
+  ?pid <fedora-model:hasModel> !compound_model ;
+       <fedora-model:label> ?title .
+  FILTER(regex(?title, "!text", 'i') || regex(str(?pid), "!text", 'i'))
+}
+LIMIT 10
+EOQ;
+  $query = format_string($query, $replacements);
+  $results = $islandora_tuque->repository->ri->sparqlQuery($query, 'unlimited');
+
+  foreach ($results as $result) {
+    $matches[$result['pid']['value']] = t('!title (!pid)', array(
+      '!title' => $result['title']['value'],
+      '!pid' => $result['pid']['value'],
+    ));
   }
   drupal_json_output($matches);
 }
@@ -506,10 +526,10 @@ function islandora_compound_object_menu_local_tasks_alter(&$data, $router_item, 
       $compound_object = islandora_object_load($pid);
       $compound_info = islandora_compound_object_retrieve_compound_info($compound_object);
       if ($compound_info) {
-        drupal_set_title(filter_xss(t('!parent - !child', array(
-          '!parent' => $compound_info['parent_label'],
-          '!child' => $compound_info['label'],
-        ))));
+        drupal_set_title(t('@parent - @child', array(
+          '@parent' => $compound_info['parent_label'],
+          '@child' => $compound_info['label'],
+        )), PASS_THROUGH);
       }
       if (isset($data['tabs'][0]['output'])) {
         foreach ($data['tabs'][0]['output'] as $key => &$tab) {
