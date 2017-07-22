@@ -312,10 +312,42 @@ function islandora_compound_object_update_parent_thumbnail($parent) {
  *   A flag indicating if we are to return objects usable as parents.
  */
 function islandora_compound_object_autocomplete($string, $parent = FALSE) {
+  module_load_include('inc', 'islandora_solr', 'includes/utilities');
   $matches = array();
-  $islandora_tuque = islandora_get_tuque_connection();
+  //$islandora_tuque = islandora_get_tuque_connection();
+  // FLVC replacing sparl with solr query: faster search and limits by site
   $compound_enforcement = variable_get('islandora_compound_object_compound_children', TRUE);
+  $compound_model = ISLANDORA_COMPOUND_OBJECT_CMODEL;
 
+  $params = array(
+    'fl' => array('PID', 'mods_titleInfo_title_mls'),
+  );
+  $query = 'PID:*' . islandora_solr_lesser_escape($string) . '* OR mods_titleInfo_title_mls:*' . islandora_solr_lesser_escape($string) . '*';
+  $qp = new IslandoraSolrQueryProcessor();
+  $qp->buildQuery($query, $params);
+  $qp->solrLimit = 10;
+  $qp->solrParams['fq'][] = '-RELS_EXT_hasModel_uri_ms:info\:fedora/islandora\:collectionCModel';
+  if ($compound_enforcement && $parent) {
+    $qp->solrParams['fq'][] = 'RELS_EXT_hasModel_uri_mt:"' . $compound_model . '"';
+  }
+  $compoundexcludefilter = array_search('-RELS_EXT_isConstituentOf_uri_mt:*',$qp->solrParams['fq']);
+  if ($compoundexcludefilter !== false) {
+    unset($qp->solrParams['fq'][$compoundexcludefilter]);
+  }
+  $qp->executeQuery();
+  try {
+    $results = $qp->islandoraSolrResult['response']['objects'];
+  }
+  catch (Exception $e) {
+    watchdog_exception('Islandora Compound Object', $e, 'Exception while searching for autocomplete.', array(), WATCHDOG_ERROR);
+    $results = array();
+  }
+  if ($results) {
+    foreach ($results as $result) {
+      $matches[$result['PID']] = $result['object_label'] . ' (' . $result['PID'] . ')';
+    }
+  }
+/*
   // Build escapes as per:
   // - https://www.w3.org/TR/xmlschema-2/#dt-metac and
   // - https://www.w3.org/TR/xmlschema-2/#dt-cces1
@@ -368,6 +400,7 @@ EOQ;
       '!pid' => $result['pid']['value'],
     ));
   }
+*/
   drupal_json_output($matches);
 }
 
